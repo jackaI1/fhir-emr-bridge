@@ -80,6 +80,10 @@ This is a development integration demonstrator, not a clinical system. Use one w
 
 ## Implementation files
 
+I chose a small HTTP service with an interactive request page and command-line
+checks so I can reuse the integration without building a separate frontend.
+A command-line tool alone would offer fewer ways to call the same workflow.
+
 | File | Role in the visit workflow |
 | --- | --- |
 | [`app.py`](../src/fhir_emr_bridge/app.py) | Defines the HTTP routes, starts the shared upstream client and connects requests to a server-side login session. |
