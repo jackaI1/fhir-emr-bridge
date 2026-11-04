@@ -5,6 +5,7 @@ The real authorization-code/PKCE flow is driven over HTTP, not a password grant.
 """
 
 import json
+import math
 import os
 import subprocess
 from pathlib import Path
@@ -161,6 +162,16 @@ def main():
         assert {"8867-4", "8310-5", "29463-7"} <= {obs["code"] for obs in result["observations"]}, (
             result
         )
+        # Preserve and verify the server's UCUM units: OpenEMR returns imperial
+        # quantities for this native fixture; HAPI's separate fixture uses SI.
+        by_code = {obs["code"]: obs for obs in result["observations"]}
+        for code, value, unit in [
+            ("8867-4", 68, "/min"),
+            ("8310-5", 98.24, "[degF]"),
+            ("29463-7", 159.83514, "[lb_av]"),
+        ]:
+            assert by_code[code]["unit"] == unit, by_code[code]
+            assert math.isclose(by_code[code]["value"], value, abs_tol=0.0001), by_code[code]
         read = client.get("/openemr/patients/" + result["patient_id"])
         assert read.status_code == 200, read.text
         assert read.json()["observation_count"] == result["observation_count"]
