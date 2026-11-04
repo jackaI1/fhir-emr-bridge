@@ -15,7 +15,7 @@ Executed `uv run python scripts/smoke_hapi.py` through the FastAPI application, 
 
 ## OpenEMR and CI (2026-11-04 UTC / November 3 Toronto)
 
-[Successful real integration run](https://github.com/jackaI1/fhir-emr-bridge/actions/runs/41773494411) on commit `8dda48d` passed all four jobs: Python 3.12 tests, Python 3.13 tests, built-container health check, and OpenEMR integration. Each Python job ran 50 tests. The final PR head reruns the same checks, with additional numeric/UCUM assertions and no duplicate feature-branch push workflow.
+[Successful real integration run](https://github.com/jackaI1/fhir-emr-bridge/actions/runs/41773494411) on commit `8dda48d` passed all four jobs: Python 3.12 tests, Python 3.13 tests, built-container health check, and OpenEMR integration. Each Python job ran 50 tests. The initial merged implementation also passed the same four jobs on main in [run 41774319377](https://github.com/jackaI1/fhir-emr-bridge/actions/runs/41774319377), including numeric/UCUM assertions.
 
 The OpenEMR job booted the unmodified `openemr/openemr:7.0.4` image and MariaDB 11.4 with generated local credentials, then executed `scripts/smoke_openemr.py`:
 
@@ -37,3 +37,11 @@ The OpenEMR job booted the unmodified `openemr/openemr:7.0.4` image and MariaDB 
 Compatibility findings are explicitly handled: OpenEMR requires confidential clients for provider `user/` scopes; its legacy search Bundles use `collection`; and its calculated-BP subscriber assumes a browser session during standard-API writes. The fixture omits BP and includes only the three required numeric vitals. No OpenEMR authorization checks or source files were patched. HAPI performs the separate FHIR read/write demonstration; OpenEMR native seeding is not presented as FHIR writing.
 
 Default tests use HTTP boundary fixtures and require no network. Public HAPI testing is opt-in. Tests also cover partial-write recovery, ownership protection, incompatible servers, malformed responses, OAuth state replay/expiry/browser binding, concurrent refresh rotation, bounded session capacity, secret-safe configuration errors, pagination, and legacy OpenEMR response shapes.
+
+## Readable summaries and repeat check (2026-11-04 UTC / November 3 Toronto)
+
+The follow-up keeps the original 50 tests and adds three cases for distinguishing numeric measurements from missing data, accepting a numeric zero, and handling an empty observation list. Local validation: **53 passed**, Ruff lint passed, and all 14 Python files passed the formatting check.
+
+Repeated the real HAPI command with run ID `7292c0dd-0a40-4b6c-b2ef-79d91e954a7f`. It again reported `verified: true`, `resource_count: 5`, `repeat_writes: 2`, and finally `deleted: 5`. The test launched no local listener or browser.
+
+OpenEMR summaries now preserve each observation's explicit `dataAbsentReason` and report numeric and data-absent counts separately from the total. Missing values without a reason are not classified as explicitly absent. The integration smoke asserts exactly three numeric measurements and stable counts on a second authenticated read. The existing real OpenEMR CI job exercises this addition against the unmodified server image.

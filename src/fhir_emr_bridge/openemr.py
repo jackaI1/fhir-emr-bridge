@@ -80,6 +80,7 @@ async def patient_summary(client: FhirClient, patient_id: str) -> dict:
                 "code": coding.get("code"),
                 "value": quantity.get("value"),
                 "unit": quantity.get("code"),
+                "data_absent_reason": obs.get("dataAbsentReason"),
             }
         )
     return {
@@ -88,6 +89,11 @@ async def patient_summary(client: FhirClient, patient_id: str) -> dict:
         "read_via": "FHIR R4",
         "encounter_count": len(encounters),
         "observation_count": len(observations),
+        "numeric_observation_count": sum(
+            isinstance(vital["value"], (int, float)) and not isinstance(vital["value"], bool)
+            for vital in vitals
+        ),
+        "data_absent_observation_count": sum(bool(vital["data_absent_reason"]) for vital in vitals),
         "observations": vitals,
     }
 

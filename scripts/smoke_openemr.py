@@ -159,6 +159,7 @@ def main():
         result = seeded.json()
         assert result["encounter_count"] >= 1, result
         assert result["observation_count"] >= 3, result
+        assert result["numeric_observation_count"] == 3, result
         assert {"8867-4", "8310-5", "29463-7"} <= {obs["code"] for obs in result["observations"]}, (
             result
         )
@@ -174,7 +175,12 @@ def main():
             assert math.isclose(by_code[code]["value"], value, abs_tol=0.0001), by_code[code]
         read = client.get("/openemr/patients/" + result["patient_id"])
         assert read.status_code == 200, read.text
-        assert read.json()["observation_count"] == result["observation_count"]
+        for key in (
+            "observation_count",
+            "numeric_observation_count",
+            "data_absent_observation_count",
+        ):
+            assert read.json()[key] == result[key]
         # This is expected to fail BEFORE writing: OpenEMR does not advertise these FHIR writes.
         from uuid import uuid4
 

@@ -175,3 +175,53 @@ async def test_openemr_collection_search_bundle_compatibility():
         summary = await patient_summary(FhirClient(http, "private-token"), PATIENT)
         assert summary["encounter_count"] == 1
         assert summary["observation_count"] == 2
+
+
+@pytest.mark.parametrize("case", ["mixed", "zero", "empty"])
+async def test_summary_distinguishes_measurements_from_missing_data(case):
+    absent_reason = {
+        "coding": [
+            {
+                "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+                "code": "unknown",
+            }
+        ]
+    }
+    items = []
+    if case == "mixed":
+        items = [
+            {"id": "pulse", "valueQuantity": {"value": 68, "code": "/min"}},
+            {"id": "missing", "dataAbsentReason": absent_reason},
+            {"id": "unexplained"},
+            {"id": "text", "valueString": "not a numeric measurement"},
+        ]
+    elif case == "zero":
+        items = [{"id": "zero", "valueQuantity": {"value": 0, "code": "kg"}}]
+
+    def handler(request):
+        if not request.url.path.endswith("/Observation"):
+            return upstream(request)
+        return httpx.Response(
+            200,
+            json=bundle(
+                [
+                    {
+                        "resourceType": "Observation",
+                        "subject": {"reference": "Patient/" + PATIENT},
+                        **item,
+                    }
+                    for item in items
+                ]
+            ),
+        )
+
+    async with httpx.AsyncClient(
+        base_url="https://ehr.test/apis/default/fhir/", transport=httpx.MockTransport(handler)
+    ) as http:
+        summary = await patient_summary(FhirClient(http, "private-token"), PATIENT)
+    assert summary["observation_count"] == len(items)
+    assert summary["numeric_observation_count"] == (0 if case == "empty" else 1)
+    assert summary["data_absent_observation_count"] == (1 if case == "mixed" else 0)
+    if case == "mixed":
+        assert summary["observations"][1]["data_absent_reason"] == absent_reason
+        assert summary["observations"][2]["data_absent_reason"] is None
