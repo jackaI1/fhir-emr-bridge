@@ -38,6 +38,14 @@ async def main():
             response = await client.get(f"/demo/{run_id}")
             assert response.is_success, response.text
             assert response.json()["verified"] is True
+            visits = response.json()["visit_report"]
+            assert visits["counts"] == {
+                "total": 3,
+                "assigned": 3,
+                "unassigned": 0,
+                "excluded": 0,
+            }, visits
+            assert len(visits["visits"]) == 1, visits
             print(
                 json.dumps(
                     {"upstream": "https://hapi.fhir.org/baseR4", **report, "repeat_writes": 2},

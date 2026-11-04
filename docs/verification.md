@@ -51,3 +51,11 @@ OpenEMR summaries now preserve each observation's explicit `dataAbsentReason` an
 [PR #2 integration run](https://github.com/jackaI1/fhir-emr-bridge/actions/runs/41775398482) passed all four jobs. Its new summary fields measured **15 total observations, 3 numeric quantities and 10 explicit absent-data reasons**. The other two entries have no numeric quantity or explicit absent-data reason; they must not be described as additional measured vitals or counted as explicitly absent. The two corresponding codes in the summary were `85353-1` and `8327-9`.
 
 The follow-up correction makes the smoke assert 15/3/10 exactly for the pinned OpenEMR 7.0.4 fixture and expands the existing mixed-summary regression case to the same 15-entry shape. The suite remains 53 tests. The successful CI cleanup log confirms removal of both OpenEMR/MariaDB containers, both volumes and the Compose network.
+# Visit-report check, November 4, 2026
+
+The visit-report extension passed 89 local automated tests, Ruff lint and Ruff formatting checks on Python 3.12.14. This includes 36 added cases for visit membership, component values, missing-data reasons, status handling, patient isolation, duplicate identities, pagination and route authorization.
+
+I also ran `uv run python scripts/smoke_hapi.py` against `https://hapi.fhir.org/baseR4`. Run `82333d19-4497-48f0-ab62-eec4a7bd78d0` wrote the five fixed fictional resources twice, read back one visit containing all three observations and reported no unassigned or excluded observations. The `finally` cleanup confirmed five deletions. The script created no listener, local server or browser page. Public-server deletion does not guarantee removal of historical versions.
+
+The OpenEMR smoke check now requests the visit-report route after authenticated reads. It checks all 15 observation entries, three original numeric quantities and ten absent-data reasons across the report groups. CI runs that check against actual disposable OpenEMR and MariaDB containers and removes them afterward. A record system's missing encounter link stays visible as unassigned; a timestamp is never used as a substitute.
+

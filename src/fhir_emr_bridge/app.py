@@ -135,6 +135,12 @@ def create_app(settings: Settings | None = None, *, transport=None) -> FastAPI:
 
         return await patient_summary(await fhir(request), str(patient_id))
 
+    @app.get("/openemr/patients/{patient_id}/visits")
+    async def openemr_visits(patient_id: UUID, request: Request):
+        from .openemr import patient_visits
+
+        return await patient_visits(await fhir(request), str(patient_id))
+
     return app
 
 
