@@ -191,9 +191,11 @@ async def test_summary_distinguishes_measurements_from_missing_data(case):
     if case == "mixed":
         items = [
             {"id": "pulse", "valueQuantity": {"value": 68, "code": "/min"}},
-            {"id": "missing", "dataAbsentReason": absent_reason},
-            {"id": "unexplained"},
-            {"id": "text", "valueString": "not a numeric measurement"},
+            {"id": "weight", "valueQuantity": {"value": 159.83514, "code": "[lb_av]"}},
+            {"id": "temperature", "valueQuantity": {"value": 98.24, "code": "[degF]"}},
+            *[{"id": f"missing-{i}", "dataAbsentReason": absent_reason} for i in range(10)],
+            {"id": "panel", "hasMember": [{"reference": "Observation/pulse"}]},
+            {"id": "site", "valueCodeableConcept": {"text": "oral"}},
         ]
     elif case == "zero":
         items = [{"id": "zero", "valueQuantity": {"value": 0, "code": "kg"}}]
@@ -220,8 +222,8 @@ async def test_summary_distinguishes_measurements_from_missing_data(case):
     ) as http:
         summary = await patient_summary(FhirClient(http, "private-token"), PATIENT)
     assert summary["observation_count"] == len(items)
-    assert summary["numeric_observation_count"] == (0 if case == "empty" else 1)
-    assert summary["data_absent_observation_count"] == (1 if case == "mixed" else 0)
+    assert summary["numeric_observation_count"] == {"mixed": 3, "zero": 1, "empty": 0}[case]
+    assert summary["data_absent_observation_count"] == (10 if case == "mixed" else 0)
     if case == "mixed":
-        assert summary["observations"][1]["data_absent_reason"] == absent_reason
-        assert summary["observations"][2]["data_absent_reason"] is None
+        assert summary["observations"][3]["data_absent_reason"] == absent_reason
+        assert summary["observations"][13]["data_absent_reason"] is None

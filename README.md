@@ -37,7 +37,7 @@ uv run python scripts/smoke_openemr.py
 
 The first command generates local passwords in ignored `.env`; it refuses to replace an existing file. Startup can take several minutes. The check signs in to OpenEMR, approves access for the bridge, creates the fictional visit and reads it back. Each run creates a new fictional patient.
 
-Success prints `"smart_authorized": true`, `"fhir_version": "4.0.1"`, one encounter (visit), and `"numeric_observation_count": 3`. With OpenEMR 7.0.4, there are 15 observation entries: three measured vital signs and 12 entries marked as missing data. Those 12 are not extra measurements. The output preserves the reasons in `data_absent_reason` and reports their count in `data_absent_observation_count`.
+Success prints `"smart_authorized": true`, `"fhir_version": "4.0.1"`, one encounter (visit), and `"numeric_observation_count": 3`. With OpenEMR 7.0.4, there are 15 observation entries: three numeric vital signs, ten entries marked as missing data and two other entries without numeric quantities. The other twelve entries are not twelve additional numeric measurements. The output preserves the reasons in `data_absent_reason` and reports their count in `data_absent_observation_count`.
 
 OpenEMR 7.0.4 only supports reading these records through its FHIR interface. I create them through OpenEMR's standard API, its other program-facing interface, then check the FHIR reads. The public HAPI demo separately tests FHIR writes.
 

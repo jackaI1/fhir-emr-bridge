@@ -22,7 +22,7 @@ The OpenEMR job booted the unmodified `openemr/openemr:7.0.4` image and MariaDB 
 - Dynamically registered a confidential client, enabled it through the disposable instance's CLI configuration, and completed actual admin login and scope consent.
 - Exchanged the authorization code using S256 PKCE and `client_secret_post`; the application's callback succeeded without returning tokens.
 - Created a synthetic Patient, Encounter and vitals form through the OpenEMR standard API.
-- Read FHIR R4 (4.0.1) Patient, Encounter and Observation resources using the bearer token. The report contained one encounter and 15 Observations: three populated numeric vital signs plus OpenEMR's data-absent observations for other fields.
+- Read FHIR R4 (4.0.1) Patient, Encounter and Observation resources using the bearer token. The report contained one encounter and 15 Observations: three populated numeric vital signs, ten entries with explicit data-absent reasons and two other non-numeric entries.
 - Verified these returned LOINC/UCUM quantities (preserving the upstream units):
 
 | LOINC | Value | UCUM |
@@ -45,3 +45,9 @@ The follow-up keeps the original 50 tests and adds three cases for distinguishin
 Repeated the real HAPI command with run ID `7292c0dd-0a40-4b6c-b2ef-79d91e954a7f`. It again reported `verified: true`, `resource_count: 5`, `repeat_writes: 2`, and finally `deleted: 5`. The test launched no local listener or browser.
 
 OpenEMR summaries now preserve each observation's explicit `dataAbsentReason` and report numeric and data-absent counts separately from the total. Missing values without a reason are not classified as explicitly absent. The integration smoke asserts exactly three numeric measurements and stable counts on a second authenticated read. The existing real OpenEMR CI job exercises this addition against the unmodified server image.
+
+### Exact missing-data counts from the follow-up CI run
+
+[PR #2 integration run](https://github.com/jackaI1/fhir-emr-bridge/actions/runs/41775398482) passed all four jobs. Its new summary fields measured **15 total observations, 3 numeric quantities and 10 explicit absent-data reasons**. The other two entries have no numeric quantity or explicit absent-data reason; they must not be described as additional measured vitals or counted as explicitly absent. The two corresponding codes in the summary were `85353-1` and `8327-9`.
+
+The follow-up correction makes the smoke assert 15/3/10 exactly for the pinned OpenEMR 7.0.4 fixture and expands the existing mixed-summary regression case to the same 15-entry shape. The suite remains 53 tests. The successful CI cleanup log confirms removal of both OpenEMR/MariaDB containers, both volumes and the Compose network.

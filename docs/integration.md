@@ -68,7 +68,7 @@ OpenEMR 7.0.4 exposes reads and searches for these FHIR resources, so creation u
 
 The summary preserves the upstream values and units. LOINC codes identify which measurement was taken; UCUM codes identify its units. OpenEMR returns pulse 68 `/min`, temperature 98.24 `[degF]` and weight 159.83514 `[lb_av]` for this fixture. These are beats per minute, degrees Fahrenheit and pounds. The separate HAPI fixture uses Celsius and kilograms.
 
-`observation_count` includes every returned observation, including empty fields. `numeric_observation_count` counts numeric `valueQuantity.value` fields, including zero. `data_absent_observation_count` counts explicit `dataAbsentReason` entries; an unexplained missing value is not assumed to have a reason. Each summary item preserves that reason in `data_absent_reason`. The live fixture has three numeric measurements and 12 observations marked as missing data, for 15 entries total. The smoke check verifies the three quantities and checks that all three counts remain stable on a second read.
+`observation_count` includes every returned observation, including empty fields. `numeric_observation_count` counts numeric `valueQuantity.value` fields, including zero. `data_absent_observation_count` counts explicit `dataAbsentReason` entries; an unexplained missing value is not assumed to have a reason. Each summary item preserves that reason in `data_absent_reason`. The live fixture has three numeric measurements, ten observations with explicit missing-data reasons and two other non-numeric entries, for 15 entries total. The smoke check verifies those exact counts and the three quantities, then checks that the counts remain stable on a second read.
 
 ## Configuration and security boundaries
 
