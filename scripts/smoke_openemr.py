@@ -158,8 +158,9 @@ def main():
         assert seeded.status_code == 200, seeded.text
         result = seeded.json()
         assert result["encounter_count"] >= 1, result
-        assert result["observation_count"] >= 3, result
+        assert result["observation_count"] == 15, result
         assert result["numeric_observation_count"] == 3, result
+        assert result["data_absent_observation_count"] == 10, result
         assert {"8867-4", "8310-5", "29463-7"} <= {obs["code"] for obs in result["observations"]}, (
             result
         )
