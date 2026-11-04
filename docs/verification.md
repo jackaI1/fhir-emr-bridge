@@ -15,4 +15,4 @@ Executed `uv run python scripts/smoke_hapi.py` through the FastAPI application, 
 
 ## OpenEMR and CI
 
-The CI workflow boots an isolated OpenEMR 7.0.4/MariaDB stack and runs `scripts/smoke_openemr.py`. It performs real dynamic public-client registration, admin enablement, login/consent, authorization-code exchange with S256 PKCE, native synthetic seeding, and authenticated FHIR reads. Results and final CI links will be recorded after execution. All jobs include fixture cleanup.
+The CI workflow boots an isolated OpenEMR 7.0.4/MariaDB stack and runs `scripts/smoke_openemr.py`. It performs real dynamic confidential-client registration, admin enablement, login/consent, authorization-code exchange with S256 PKCE, native synthetic seeding, and authenticated FHIR reads. Results and final CI links will be recorded after execution. All jobs include fixture cleanup.

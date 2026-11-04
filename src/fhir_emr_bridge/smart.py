@@ -1,4 +1,4 @@
-"""Standalone SMART authorization code flow for a registered public client.
+"""Standalone SMART authorization code flow for a registered public or confidential client.
 
 Access/refresh tokens stay in bounded, expiring server memory. An opaque cookie
 binds PKCE and OAuth state to the initiating browser; no identity claims are used.
@@ -42,6 +42,13 @@ class SmartAuth:
     def __init__(self, settings: Settings, http: httpx.AsyncClient, clock=time.monotonic):
         self.settings, self.http, self.clock = settings, http, clock
         self.sessions: dict[str, Session] = {}
+
+    def client_credentials(self) -> dict:
+        credentials = {"client_id": self.settings.smart_client_id}
+        secret = self.settings.smart_client_secret.get_secret_value()
+        if secret:
+            credentials["client_secret"] = secret
+        return credentials
 
     def prune(self):
         now = self.clock()
@@ -129,7 +136,7 @@ class SmartAuth:
                 session.token_endpoint,
                 data={
                     "grant_type": "authorization_code",
-                    "client_id": self.settings.smart_client_id,
+                    **self.client_credentials(),
                     "redirect_uri": self.settings.redirect_uri,
                     "code": code,
                     "code_verifier": session.verifier,
@@ -161,7 +168,7 @@ class SmartAuth:
                         session.token_endpoint,
                         data={
                             "grant_type": "refresh_token",
-                            "client_id": self.settings.smart_client_id,
+                            **self.client_credentials(),
                             "refresh_token": session.refresh_token,
                         },
                     )

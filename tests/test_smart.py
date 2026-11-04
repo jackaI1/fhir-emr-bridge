@@ -220,3 +220,45 @@ async def test_concurrent_requests_refresh_rotating_token_only_once():
         assert results == ["fresh-token", "fresh-token"]
         assert refreshes[0] == 1
         assert await auth.token(sid) == "fresh-token"
+
+
+async def test_confidential_openemr_client_uses_secret_post_and_pkce():
+    calls = []
+
+    def upstream(request):
+        if request.url.path.endswith("smart-configuration"):
+            return httpx.Response(
+                200,
+                json={
+                    "authorization_endpoint": "https://ehr.test/auth",
+                    "token_endpoint": "https://ehr.test/token",
+                },
+            )
+        params = parse_qs(request.content.decode())
+        calls.append(params)
+        assert params["client_secret"] == ["generated-demo-secret"]
+        if params["grant_type"] == ["authorization_code"]:
+            assert len(params["code_verifier"][0]) >= 43
+        return httpx.Response(
+            200,
+            json={
+                "access_token": "access",
+                "token_type": "Bearer",
+                "expires_in": 1,
+                "refresh_token": "refresh",
+            },
+        )
+
+    settings = Settings(
+        fhir_base_url="https://ehr.test/fhir",
+        smart_client_id="demo",
+        smart_client_secret="generated-demo-secret",
+    )
+    assert "generated-demo-secret" not in repr(settings)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as http:
+        auth = SmartAuth(settings, http)
+        sid, url = await auth.begin()
+        assert "generated-demo-secret" not in url
+        await auth.complete(sid, parse_qs(urlsplit(url).query)["state"][0], "code")
+        assert await auth.token(sid) == "access"
+    assert len(calls) == 2

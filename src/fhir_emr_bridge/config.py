@@ -2,7 +2,7 @@
 
 from urllib.parse import urlsplit
 
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LOOPBACK = {"localhost", "127.0.0.1", "::1"}
@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="BRIDGE_", env_file=".env", extra="ignore")
     fhir_base_url: str = "https://hapi.fhir.org/baseR4"
     smart_client_id: str = ""
+    smart_client_secret: SecretStr = SecretStr("")
     smart_scopes: str = (
         "openid offline_access api:fhir user/Patient.read user/Encounter.read user/Observation.read"
     )

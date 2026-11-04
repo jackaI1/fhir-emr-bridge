@@ -7,6 +7,7 @@ The real authorization-code/PKCE flow is driven over HTTP, not a password grant.
 import json
 import os
 import subprocess
+from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 import httpx
@@ -93,16 +94,17 @@ def register():
         registration = browser.post(
             BASE + "/oauth2/default/registration",
             json={
-                "application_type": "public",
+                "application_type": "private",
                 "client_name": "Synthetic FHIR Bridge",
                 "redirect_uris": [CALLBACK],
                 "scope": SCOPES,
-                "token_endpoint_auth_method": "none",
+                "token_endpoint_auth_method": "client_secret_post",
             },
         )
         if not registration.is_success:
             raise RuntimeError(f"OpenEMR registration failed (HTTP {registration.status_code})")
         client_id = registration.json()["client_id"]
+        client_secret = registration.json()["client_secret"]
     compose(
         "exec",
         "-T",
@@ -112,10 +114,14 @@ def register():
         "php",
         "/tmp/configure_openemr.php",
     )
-    # This is a public client ID, not a secret. Keep local anyway for convenience.
+    secret_path = Path(".local/openemr-client-secret")
+    descriptor = os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w") as output:
+        output.write(client_secret)
+    # Keep the client ID locally alongside its separately protected secret.
     with open(".local/openemr-client-id", "w") as output:
         output.write(client_id)
-    return client_id
+    return client_id, client_secret
 
 
 def main():
@@ -124,11 +130,12 @@ def main():
     if not password:
         raise RuntimeError("Run scripts/demo_env.py and start compose.openemr.yaml first")
     compose("exec", "-T", "openemr", "php", "/tmp/configure_openemr.php")
-    client_id = register()
+    client_id, client_secret = register()
     app = create_app(
         Settings(
             fhir_base_url=BASE + "/apis/default/fhir",
             smart_client_id=client_id,
+            smart_client_secret=client_secret,
             smart_scopes=SCOPES,
             allow_insecure_local_tls=True,
             openemr_seed_enabled=True,

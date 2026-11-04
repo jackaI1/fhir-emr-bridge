@@ -72,13 +72,14 @@ docker compose -f compose.openemr.yaml up -d --wait --wait-timeout 600
 uv run python scripts/smoke_openemr.py
 ```
 
-`demo_env.py` generates unique local credentials in ignored `.env` with mode 600; it refuses to overwrite an existing file. Setup can take several minutes. `smoke_openemr.py` explicitly configures API globals in **this disposable instance**, dynamically registers and enables a public OAuth client, and drives the actual OpenEMR login and consent forms over HTTPS. It exchanges the resulting code using the service's PKCE verifier, seeds one obviously fictional patient/encounter/vitals form, and reads them through authenticated FHIR searches. It checks vital-sign codes, reads the summary again and confirms unsupported FHIR writes are rejected. No password grant, fabricated access token or skipped consent is used. Each smoke run creates a new fictional patient.
+`demo_env.py` generates unique local credentials in ignored `.env` with mode 600; it refuses to overwrite an existing file. Setup can take several minutes. `smoke_openemr.py` explicitly configures API globals in **this disposable instance**, dynamically registers and enables a confidential OAuth client, and drives the actual OpenEMR login and consent forms over HTTPS. It exchanges the resulting code using the service's PKCE verifier, seeds one obviously fictional patient/encounter/vitals form, and reads them through authenticated FHIR searches. It checks vital-sign codes, reads the summary again and confirms unsupported FHIR writes are rejected. No password grant, fabricated access token or skipped consent is used. Each smoke run creates a new fictional patient.
 
-The smoke uses the in-process service, so no callback listener or browser is required. Its public client ID is saved in ignored `.local/openemr-client-id`. For an interactive session afterward:
+The smoke uses the in-process service, so no callback listener or browser is required. Its client ID is saved in ignored `.local/openemr-client-id`; the generated secret is stored separately in ignored `.local/openemr-client-secret` with mode 600. OpenEMR requires confidential clients for `user/` scopes; code exchange and refresh use `client_secret_post` in addition to PKCE. Other compatible servers may use a public client by leaving the secret unset. For an interactive session afterward:
 
 ```sh
 export BRIDGE_FHIR_BASE_URL=https://localhost:9300/apis/default/fhir
 export BRIDGE_SMART_CLIENT_ID="$(cat .local/openemr-client-id)"
+export BRIDGE_SMART_CLIENT_SECRET="$(cat .local/openemr-client-secret)"
 export BRIDGE_SMART_SCOPES='openid offline_access api:fhir user/Patient.read user/Encounter.read user/Observation.read api:oemr user/patient.read user/patient.write user/encounter.read user/encounter.write user/vital.read user/vital.write'
 export BRIDGE_ALLOW_INSECURE_LOCAL_TLS=true
 export BRIDGE_OPENEMR_SEED_ENABLED=true
@@ -93,11 +94,11 @@ Stop the bridge with Ctrl-C and destroy **only this demo's** containers and synt
 docker compose -f compose.openemr.yaml down -v --remove-orphans
 ```
 
-The named volumes preserve synthetic records until that command. Delete your local `.env` and `.local/openemr-client-id` when no longer needed. If using a dedicated Colima profile, stop that profile too. The repository does not commit passwords, tokens, private keys or patient records.
+The named volumes preserve synthetic records until that command. Delete your local `.env` and `.local/openemr-client-id` / `.local/openemr-client-secret` when no longer needed. If using a dedicated Colima profile, stop that profile too. The repository does not commit passwords, tokens, private keys or patient records.
 
 ## Configuration and security boundaries
 
-Settings use the `BRIDGE_` environment prefix (or ignored `.env`); see [`config.py`](src/fhir_emr_bridge/config.py). Default upstream: `https://hapi.fhir.org/baseR4`. A configured `BRIDGE_SMART_CLIENT_ID` requires a valid browser session before data operations. Additional settings include `BRIDGE_REDIRECT_URI` and JSON-array `BRIDGE_ALLOWED_HOSTS`. HTTP is allowed only on loopback; disabling TLS verification is allowed only for a loopback upstream and is used for OpenEMR's generated demo certificate.
+Settings use the `BRIDGE_` environment prefix (or ignored `.env`); see [`config.py`](src/fhir_emr_bridge/config.py). Default upstream: `https://hapi.fhir.org/baseR4`. `BRIDGE_SMART_CLIENT_SECRET` optionally supplies confidential-client authentication and is masked in settings representations. A configured `BRIDGE_SMART_CLIENT_ID` requires a valid browser session before data operations. Additional settings include `BRIDGE_REDIRECT_URI` and JSON-array `BRIDGE_ALLOWED_HOSTS`. HTTP is allowed only on loopback; disabling TLS verification is allowed only for a loopback upstream and is used for OpenEMR's generated demo certificate.
 
 SMART discovery is restricted to the configured upstream origin. State is random, single-use, browser-bound and valid for ten minutes. Tokens remain in bounded server memory, refresh before expiration, and never appear in API responses. Cookies are HttpOnly and SameSite=Lax (Secure for HTTPS callbacks). This is delegated authorization; the service does not consume ID-token identity claims. Logout removes local credentials; it does not revoke the upstream grant. Request origins and hostnames are checked, redirects are not followed by the FHIR client, pagination is bounded to the configured FHIR base, and upstream errors are sanitized. Keep access logging disabled so callback codes are not logged.
 
