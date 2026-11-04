@@ -213,3 +213,33 @@ async def test_server_advertising_only_conditional_updates_can_run(server_client
     ) as http:
         assert (await FhirClient(http).write_run(RUN))["verified"] is True
     assert len(requests) == 5
+
+
+async def test_explicit_update_create_false_prevents_writes_even_with_conditional(server_client):
+    server, client = server_client
+    for resource in server.capability["rest"][0]["resource"]:
+        resource["updateCreate"] = False
+        resource["conditionalUpdate"] = True
+    with pytest.raises(BridgeError):
+        await client.write_run(RUN)
+    assert server.writes == 0
+
+
+@pytest.mark.parametrize("field,value", [("rest", None), ("rest", [None])])
+async def test_malformed_capability_fields_are_sanitized(server_client, field, value):
+    server, client = server_client
+    server.capability[field] = value
+    with pytest.raises(BridgeError):
+        await client.write_run(RUN)
+    assert server.writes == 0
+
+
+@pytest.mark.parametrize("meta", [None, "invalid", {"tag": None}])
+async def test_malformed_ownership_metadata_cannot_be_modified(server_client, meta):
+    server, client = server_client
+    patient = resources(RUN)[0]
+    patient["meta"] = meta
+    server.data["Patient/" + patient["id"]] = patient
+    with pytest.raises(BridgeError):
+        await client.write_run(RUN)
+    assert server.writes == 0

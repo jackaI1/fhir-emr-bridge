@@ -135,3 +135,88 @@ async def test_session_capacity_is_bounded(auth_setup):
     with pytest.raises(BridgeError) as caught:
         await auth.begin()
     assert caught.value.status == 503
+
+
+async def test_concurrent_logins_cannot_exceed_session_capacity():
+    import asyncio
+
+    gate = asyncio.Event()
+    started = [0]
+
+    async def discover(request):
+        started[0] += 1
+        if started[0] == 2:
+            gate.set()
+        await gate.wait()
+        return httpx.Response(
+            200,
+            json={
+                "authorization_endpoint": "https://ehr.test/auth",
+                "token_endpoint": "https://ehr.test/token",
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(discover)) as http:
+        auth = SmartAuth(
+            Settings(fhir_base_url="https://ehr.test/fhir", smart_client_id="demo"), http
+        )
+        auth.max_sessions = 1
+        results = await asyncio.gather(auth.begin(), auth.begin(), return_exceptions=True)
+        assert sum(isinstance(result, tuple) for result in results) == 1
+        assert sum(isinstance(result, BridgeError) for result in results) == 1
+
+
+async def test_concurrent_requests_refresh_rotating_token_only_once():
+    import asyncio
+
+    clock = [100.0]
+    refreshes = [0]
+
+    async def upstream(request):
+        if request.url.path.endswith("smart-configuration"):
+            return httpx.Response(
+                200,
+                json={
+                    "authorization_endpoint": "https://ehr.test/auth",
+                    "token_endpoint": "https://ehr.test/token",
+                },
+            )
+        params = parse_qs(request.content.decode())
+        if params["grant_type"] == ["refresh_token"]:
+            refreshes[0] += 1
+            count = refreshes[0]
+            await asyncio.sleep(0)
+            if count > 1:
+                return httpx.Response(400, json={"error": "invalid_grant"})
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "fresh-token",
+                    "refresh_token": "rotated",
+                    "token_type": "Bearer",
+                    "expires_in": 60,
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "access_token": "old-token",
+                "refresh_token": "first",
+                "token_type": "Bearer",
+                "expires_in": 60,
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as http:
+        auth = SmartAuth(
+            Settings(fhir_base_url="https://ehr.test/fhir", smart_client_id="demo"),
+            http,
+            clock=lambda: clock[0],
+        )
+        sid, url = await auth.begin()
+        await auth.complete(sid, parse_qs(urlsplit(url).query)["state"][0], "code")
+        clock[0] += 61
+        results = await asyncio.gather(auth.token(sid), auth.token(sid), return_exceptions=True)
+        assert results == ["fresh-token", "fresh-token"]
+        assert refreshes[0] == 1
+        assert await auth.token(sid) == "fresh-token"

@@ -40,7 +40,9 @@ def path(resource: dict) -> str:
 
 
 def owned(resource: dict) -> bool:
-    return TAG in resource.get("meta", {}).get("tag", [])
+    meta = resource.get("meta")
+    tags = meta.get("tag") if isinstance(meta, dict) else None
+    return isinstance(tags, list) and any(contains(tag, TAG) for tag in tags)
 
 
 def contains(actual, expected) -> bool:
@@ -70,6 +72,27 @@ class FhirClient:
         data = await self.request("GET", "metadata")
         if data.get("resourceType") != "CapabilityStatement" or data.get("fhirVersion") != "4.0.1":
             raise BridgeError("This integration requires a FHIR R4 (4.0.1) CapabilityStatement")
+        rest = data.get("rest", [])
+        if not isinstance(rest, list):
+            raise BridgeError("Malformed FHIR capabilities")
+        for entry in rest:
+            if not isinstance(entry, dict) or not isinstance(entry.get("resource", []), list):
+                raise BridgeError("Malformed FHIR capabilities")
+            for resource in entry.get("resource", []):
+                if (
+                    not isinstance(resource, dict)
+                    or not isinstance(resource.get("type"), str)
+                    or not isinstance(resource.get("interaction", []), list)
+                ):
+                    raise BridgeError("Malformed FHIR resource capabilities")
+                for interaction in resource.get("interaction", []):
+                    if not isinstance(interaction, dict) or not isinstance(
+                        interaction.get("code"), str
+                    ):
+                        raise BridgeError("Malformed FHIR interaction capabilities")
+                for flag in ["updateCreate", "conditionalUpdate"]:
+                    if flag in resource and not isinstance(resource[flag], bool):
+                        raise BridgeError("Malformed FHIR update capabilities")
         return data
 
     async def require(self, operation: str) -> dict:
@@ -89,7 +112,10 @@ class FhirClient:
                 or "read" not in codes
                 or (
                     operation == "update"
-                    and not (resource.get("updateCreate") or resource.get("conditionalUpdate"))
+                    and (
+                        resource.get("updateCreate") is False
+                        or not (resource.get("updateCreate") or resource.get("conditionalUpdate"))
+                    )
                 )
             ):
                 raise BridgeError(

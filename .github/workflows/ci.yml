@@ -32,6 +32,11 @@ jobs:
       - run: uv run python scripts/demo_env.py
       - run: docker compose -f compose.openemr.yaml up -d --wait --wait-timeout 600
       - run: uv run python scripts/smoke_openemr.py
+      - name: Bounded setup diagnostics
+        if: failure()
+        run: |
+          docker compose -f compose.openemr.yaml ps -a
+          docker compose -f compose.openemr.yaml logs --no-color --tail=80 | tail -100
       - name: Stop and remove disposable fixtures
         if: always()
         run: docker compose -f compose.openemr.yaml down -v --remove-orphans

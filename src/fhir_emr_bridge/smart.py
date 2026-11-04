@@ -4,11 +4,12 @@ Access/refresh tokens stay in bounded, expiring server memory. An opaque cookie
 binds PKCE and OAuth state to the initiating browser; no identity claims are used.
 """
 
+import asyncio
 import base64
 import hashlib
 import secrets
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlencode, urlsplit
 
 import httpx
@@ -32,6 +33,7 @@ class Session:
     refresh_token: str = ""
     token_expiry: float = 0
     pending: bool = True
+    refresh_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class SmartAuth:
@@ -69,6 +71,10 @@ class SmartAuth:
             raise BridgeError("SMART server does not support S256 PKCE")
         sid, state, verifier = (secrets.token_urlsafe(32) for _ in range(3))
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+        # Discovery yields: recheck atomically before inserting the session.
+        self.prune()
+        if len(self.sessions) >= self.max_sessions:
+            raise BridgeError("Session capacity reached; try again later", status=503)
         self.sessions[sid] = Session(state, verifier, endpoints[1], self.clock() + 600)
         params = {
             "response_type": "code",
@@ -91,11 +97,14 @@ class SmartAuth:
     def save_tokens(self, session: Session, data: dict):
         access_token = data.get("access_token")
         expiry = data.get("expires_in", 300)
+        token_type = data.get("token_type")
         refresh = data.get("refresh_token", session.refresh_token)
         if (
             not isinstance(access_token, str)
             or not access_token
-            or data.get("token_type", "").lower() != "bearer"
+            or not isinstance(token_type, str)
+            or token_type.lower() != "bearer"
+            or isinstance(expiry, bool)
             or not isinstance(expiry, (int, float))
             or not 0 < expiry <= 86400 * 365
             or not isinstance(refresh, str)
@@ -138,25 +147,28 @@ class SmartAuth:
         session = self.session(sid)
         if session.pending or not session.access_token:
             raise BridgeError("Complete SMART login first", status=401)
-        if session.token_expiry <= self.clock() + 10:
-            if not session.refresh_token:
-                self.logout(sid)
-                raise BridgeError("SMART token expired; sign in again", status=401)
-            try:
-                data = await request_json(
-                    self.http,
-                    "POST",
-                    session.token_endpoint,
-                    data={
-                        "grant_type": "refresh_token",
-                        "client_id": self.settings.smart_client_id,
-                        "refresh_token": session.refresh_token,
-                    },
-                )
-                self.save_tokens(session, data)
-            except BridgeError:
-                self.logout(sid)
-                raise
+        async with session.refresh_lock:
+            # Another request may already have rotated this refresh token.
+            self.session(sid)
+            if session.token_expiry <= self.clock() + 10:
+                if not session.refresh_token:
+                    self.logout(sid)
+                    raise BridgeError("SMART token expired; sign in again", status=401)
+                try:
+                    data = await request_json(
+                        self.http,
+                        "POST",
+                        session.token_endpoint,
+                        data={
+                            "grant_type": "refresh_token",
+                            "client_id": self.settings.smart_client_id,
+                            "refresh_token": session.refresh_token,
+                        },
+                    )
+                    self.save_tokens(session, data)
+                except BridgeError:
+                    self.logout(sid)
+                    raise
         return session.access_token
 
     def logout(self, sid: str | None):

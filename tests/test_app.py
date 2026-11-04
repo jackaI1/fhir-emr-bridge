@@ -102,6 +102,7 @@ def test_seed_disabled_by_default():
     "token_response",
     [
         {"access_token": "secret", "token_type": "MAC"},
+        {"access_token": "secret", "token_type": None},
         {"access_token": "secret", "token_type": "Bearer", "expires_in": -1},
         {"access_token": 123, "token_type": "Bearer"},
     ],
