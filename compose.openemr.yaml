@@ -1,0 +1,43 @@
+name: fhir-emr-bridge-openemr
+services:
+  mysql:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DEMO_DB_ROOT_PASSWORD:?Run scripts/demo_env.py first}
+    volumes:
+      - database:/var/lib/mysql
+    mem_limit: 512m
+    cpus: 1
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+  openemr:
+    image: openemr/openemr:7.0.4
+    ports:
+      - "127.0.0.1:9300:443"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_ROOT_PASS: ${DEMO_DB_ROOT_PASSWORD:?Run scripts/demo_env.py first}
+      MYSQL_USER: openemr
+      MYSQL_PASS: ${DEMO_DB_PASSWORD:?Run scripts/demo_env.py first}
+      OE_USER: admin
+      OE_PASS: ${DEMO_ADMIN_PASSWORD:?Run scripts/demo_env.py first}
+    volumes:
+      - sites:/var/www/localhost/htdocs/openemr/sites
+      - ./scripts/configure_openemr.php:/tmp/configure_openemr.php:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    mem_limit: 1200m
+    cpus: 2
+    healthcheck:
+      test: [CMD, curl, --fail, --insecure, --silent, https://localhost/]
+      start_period: 180s
+      interval: 10s
+      timeout: 5s
+      retries: 40
+volumes:
+  database:
+  sites:
