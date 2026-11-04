@@ -37,7 +37,11 @@ def compose(*args, client_id=None):
     environment = dict(os.environ)
     if client_id:
         environment["BRIDGE_DEMO_CLIENT_ID"] = client_id
-    subprocess.run(command, check=True, env=environment, stdout=subprocess.DEVNULL)
+    result = subprocess.run(command, check=True, env=environment, capture_output=True, text=True)
+    if "Disposable demo APIs configured." not in result.stdout:
+        raise RuntimeError(
+            "OpenEMR CLI bootstrap did not reach configuration; check container setup"
+        )
 
 
 def local_url(value):

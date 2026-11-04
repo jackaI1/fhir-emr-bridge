@@ -1,6 +1,10 @@
 <?php
 // Only mount into the isolated demo. Called explicitly with `docker compose exec`.
 // No web route is installed, and no password-grant shortcut is enabled.
+$ignoreAuth = true; // CLI bootstrap only; this file is outside the web root.
+$_SERVER['DOCUMENT_ROOT'] = '/var/www/localhost/htdocs/openemr';
+$_SERVER['HTTP_HOST'] = 'localhost:9300';
+$_SERVER['REQUEST_URI'] = '/';
 $_GET['site'] = 'default';
 require_once '/var/www/localhost/htdocs/openemr/interface/globals.php';
 foreach ([
