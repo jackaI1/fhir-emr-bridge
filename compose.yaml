@@ -1,0 +1,16 @@
+name: fhir-emr-bridge
+services:
+  bridge:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      BRIDGE_FHIR_BASE_URL: https://hapi.fhir.org/baseR4
+    init: true
+    mem_limit: 256m
+    cpus: 1
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

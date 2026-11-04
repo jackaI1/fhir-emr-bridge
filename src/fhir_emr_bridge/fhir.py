@@ -72,7 +72,7 @@ class FhirClient:
             raise BridgeError("This integration requires a FHIR R4 (4.0.1) CapabilityStatement")
         return data
 
-    async def require(self, operation: str) -> None:
+    async def require(self, operation: str) -> dict:
         metadata = await self.capabilities()
         supported = {
             resource["type"]: resource
@@ -87,13 +87,18 @@ class FhirClient:
             if (
                 operation not in codes
                 or "read" not in codes
-                or (operation == "update" and not resource.get("updateCreate"))
+                or (
+                    operation == "update"
+                    and not (resource.get("updateCreate") or resource.get("conditionalUpdate"))
+                )
             ):
                 raise BridgeError(
                     f"{kind} does not advertise the required {operation} support; "
                     "use HAPI for the write demonstration",
                     status=409,
                 )
+
+        return supported
 
     async def existing(self, resource: dict) -> dict | None:
         try:
@@ -116,13 +121,16 @@ class FhirClient:
         return found
 
     async def write_run(self, run_id: UUID) -> dict:
-        await self.require("update")
+        supported = await self.require("update")
         expected = resources(run_id)
         await self.check_ownership(expected)
         completed = 0
         try:
             for resource in expected:
-                await self.request("PUT", path(resource), json=resource)
+                kind = resource["resourceType"]
+                target = path(resource) if supported[kind].get("updateCreate") else kind
+                params = None if target != kind else {"_id": resource["id"]}
+                await self.request("PUT", target, params=params, json=resource)
                 completed += 1
             return await self.read_run(run_id)
         except BridgeError as exc:

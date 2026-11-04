@@ -188,3 +188,28 @@ async def test_malformed_json_and_timeout_are_sanitized():
     ) as http:
         with pytest.raises(BridgeError, match="unavailable"):
             await FhirClient(http).capabilities()
+
+
+async def test_server_advertising_only_conditional_updates_can_run(server_client):
+    server, client = server_client
+    for resource in server.capability["rest"][0]["resource"]:
+        resource.pop("updateCreate")
+        resource["conditionalUpdate"] = True
+    original = server.__call__
+    requests = []
+
+    def conditional_server(request):
+        if request.method == "PUT":
+            assert request.url.params["_id"] == json.loads(request.content)["id"]
+            requests.append(request)
+            # Store under the body's id, as an R4 conditional update must do here.
+            body = json.loads(request.content)
+            server.data[body["resourceType"] + "/" + body["id"]] = body
+            return httpx.Response(201, json=body)
+        return original(request)
+
+    async with httpx.AsyncClient(
+        base_url="https://fhir.test/fhir/", transport=httpx.MockTransport(conditional_server)
+    ) as http:
+        assert (await FhirClient(http).write_run(RUN))["verified"] is True
+    assert len(requests) == 5

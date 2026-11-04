@@ -1,0 +1,45 @@
+name: CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+      - run: uv run ruff check src tests scripts
+      - run: uv run ruff format --check src tests scripts
+  openemr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+      - run: uv sync --frozen
+      - run: uv run python scripts/demo_env.py
+      - run: docker compose -f compose.openemr.yaml up -d --wait --wait-timeout 600
+      - run: uv run python scripts/smoke_openemr.py
+      - name: Stop and remove disposable fixtures
+        if: always()
+        run: docker compose -f compose.openemr.yaml down -v --remove-orphans
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --build --wait
+      - run: curl --fail http://127.0.0.1:8000/health
+      - if: always()
+        run: docker compose down --remove-orphans
