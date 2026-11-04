@@ -96,6 +96,7 @@ def register():
             json={
                 "application_type": "private",
                 "client_name": "Synthetic FHIR Bridge",
+                "contacts": ["synthetic@example.invalid"],
                 "redirect_uris": [CALLBACK],
                 "scope": SCOPES,
                 "token_endpoint_auth_method": "client_secret_post",

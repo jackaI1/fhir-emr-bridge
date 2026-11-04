@@ -35,6 +35,9 @@ def upstream(request):
             assert payload["reason"] == "Synthetic integration demonstration"
             return httpx.Response(200, json={"data": {"encounter": 2, "uuid": ENCOUNTER}})
         assert route.endswith("/api/patient/1/encounter/2/vital")
+        # Reproduce OpenEMR 7.0.4 calculated-BP API bug seen in the real container.
+        if "bps" in payload or "bpd" in payload:
+            return httpx.Response(500, json={"error": "missing web-session authUserID"})
         assert payload["pulse"] == "68"
         assert payload["temperature"] == "98.24"  # OpenEMR standard API uses Fahrenheit
         return httpx.Response(200, json={"vid": 1, "fid": 1})

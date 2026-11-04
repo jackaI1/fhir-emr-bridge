@@ -262,3 +262,10 @@ async def test_confidential_openemr_client_uses_secret_post_and_pkce():
         await auth.complete(sid, parse_qs(urlsplit(url).query)["state"][0], "code")
         assert await auth.token(sid) == "access"
     assert len(calls) == 2
+
+
+def test_invalid_configuration_does_not_print_raw_client_secret():
+    secret = "S3cr3t"
+    with pytest.raises(ValidationError) as caught:
+        Settings(smart_client_secret=secret, fhir_base_url="http://remote.test/fhir")
+    assert secret not in str(caught.value)

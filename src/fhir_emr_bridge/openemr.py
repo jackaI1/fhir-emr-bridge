@@ -139,22 +139,20 @@ async def seed_demo(client: FhirClient) -> dict:
                 "class_code": "AMB",
                 "facility_id": "1",
                 "billing_facility": "1",
+                "provider_id": "1",
             },
         )
         eid = int(encounter["encounter"])
+        # Avoid the 7.0.4 BP-mean subscriber, which assumes a browser authUserID
+        # during API writes. The integration needs weight, pulse and temperature only.
         await post(
             f"patient/{pid}/encounter/{eid}/vital",
             {
                 "date": "2025-01-15 10:05:00",
                 "weight": "159.83514",
-                "height": "68",
                 "temperature": "98.24",
                 "temp_method": "oral",
                 "pulse": "68",
-                "bps": "120",
-                "bpd": "80",
-                "respiration": "16",
-                "oxygen_saturation": "98",
                 "note": "SYNTHETIC ONLY - FHIR bridge integration demonstration",
             },
             vital=True,

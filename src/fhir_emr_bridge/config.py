@@ -25,7 +25,9 @@ def safe_url(value: str) -> str:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="BRIDGE_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="BRIDGE_", env_file=".env", extra="ignore", hide_input_in_errors=True
+    )
     fhir_base_url: str = "https://hapi.fhir.org/baseR4"
     smart_client_id: str = ""
     smart_client_secret: SecretStr = SecretStr("")
