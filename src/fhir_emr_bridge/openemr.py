@@ -16,8 +16,12 @@ async def search(client: FhirClient, kind: str, patient_id: str) -> list[dict]:
             raise BridgeError("Unsafe or repeated FHIR pagination link")
         visited.add(url)
         page = await client.request("GET", url)
-        if page.get("resourceType") != "Bundle" or page.get("type") != "searchset":
-            raise BridgeError("Expected a FHIR searchset Bundle")
+        # OpenEMR7.0.4 labels search results collection (FhirResourcesService).
+        if page.get("resourceType") != "Bundle" or page.get("type") not in {
+            "searchset",
+            "collection",
+        }:
+            raise BridgeError("Expected a FHIR search Bundle")
         for entry in page.get("entry", []):
             resource = entry.get("resource", {})
             if entry.get("search", {}).get("mode") == "outcome":

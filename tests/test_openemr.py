@@ -158,3 +158,20 @@ async def test_openemr_validation_errors_are_not_silently_accepted():
         with pytest.raises(BridgeError) as caught:
             await seed_demo(FhirClient(http, "private-token"))
         assert "private" not in str(caught.value)
+
+
+async def test_openemr_collection_search_bundle_compatibility():
+    # OpenEMR7.0.4 FhirResourcesService::createBundle labels searches 'collection'.
+    def legacy(request):
+        response = upstream(request)
+        data = response.json()
+        if data.get("resourceType") == "Bundle":
+            data["type"] = "collection"
+        return httpx.Response(response.status_code, json=data)
+
+    async with httpx.AsyncClient(
+        base_url="https://ehr.test/apis/default/fhir/", transport=httpx.MockTransport(legacy)
+    ) as http:
+        summary = await patient_summary(FhirClient(http, "private-token"), PATIENT)
+        assert summary["encounter_count"] == 1
+        assert summary["observation_count"] == 2
