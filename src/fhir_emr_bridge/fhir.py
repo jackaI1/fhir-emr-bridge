@@ -4,6 +4,7 @@ from uuid import UUID
 
 import httpx
 
+from .reports import ReportError, build_visit_report
 from .synthetic import TAG, resources
 
 
@@ -175,12 +176,22 @@ class FhirClient:
                     f"Synthetic verification failed for {expected['resourceType']}", status=409
                 )
             actual_resources.append(actual)
+        try:
+            visit_report = build_visit_report(
+                actual_resources[0]["id"],
+                actual_resources[1:2],
+                actual_resources[2:],
+                base_url=str(self.http.base_url),
+            )
+        except ReportError as exc:
+            raise BridgeError(str(exc)) from exc
         return {
             "run_id": str(run_id),
             "verified": True,
             "resource_count": len(actual_resources),
             "patient_id": actual_resources[0]["id"],
             "encounter_id": actual_resources[1]["id"],
+            "visit_report": visit_report,
             "observations": [
                 {
                     "id": obs["id"],

@@ -8,6 +8,8 @@ Medical-record software stores a patient's details, visits and measurements. A s
 
 I use this personal project to create an obviously fictional patient, add one visit with weight, pulse and temperature, then read the records back and check their values, units and links. The quickest demo uses a shared public test server and removes its five records afterward. I can also run OpenEMR, a free electronic health record system, on my own computer and test its sign-in and record access.
 
+I also use the visit report to check which measurements belong together. It follows each record's saved visit link, keeps missing measurements visible and sets aside cancelled or erroneous results. Two visits on the same date stay separate.
+
 The programs exchange records using Fast Healthcare Interoperability Resources (FHIR), a common format for healthcare data. This project uses release 4, called R4. Start with the public-server check below; it needs no account or local record system.
 
 ## Try a fictional visit
@@ -22,6 +24,8 @@ uv run python scripts/smoke_hapi.py
 ```
 
 The script uses the [HAPI public test server](https://hapi.fhir.org/). It creates one patient, one visit and three measurements, repeats the same writes, then reads everything back. Success prints `"verified": true`, `"resource_count": 5`, `"repeat_writes": 2` and finally `"deleted": 5`. Cleanup runs even if a check fails. The script opens no ports or browser pages.
+
+Look for `visit_report` in that output. Its `counts` show three records assigned to one visit, zero unassigned and zero excluded. Each result keeps its original value and unit. This is the quickest way to try the report without setting up a local medical-record system.
 
 This is a shared, unauthenticated server that may be unavailable or periodically cleared. Use only the included fictional records. Deletion can leave record history on the server. If a successful report is followed by a cleanup failure, use its `run_id` to retry deletion through the service below.
 
@@ -40,6 +44,8 @@ The first command generates local passwords in ignored `.env`; it refuses to rep
 Success prints `"smart_authorized": true`, `"fhir_version": "4.0.1"`, one encounter (visit), and `"numeric_observation_count": 3`. With OpenEMR 7.0.4, there are 15 observation entries: three numeric vital signs, ten entries marked as missing data and two other entries without numeric quantities. The other twelve entries are not twelve additional numeric measurements. The output preserves the reasons in `data_absent_reason` and reports their count in `data_absent_observation_count`.
 
 OpenEMR 7.0.4 only supports reading these records through its FHIR interface. I create them through OpenEMR's standard API, its other program-facing interface, then check the FHIR reads. The public HAPI demo separately tests FHIR writes.
+
+The check also requests a visit report and prints `visit_report_counts`. It accounts for all 15 observation entries and checks that the same three quantities and ten missing-data reasons survive. A record without a usable visit link appears under `unassigned_observations`; the report never fills in a link from its timestamp.
 
 When finished, remove this demo's containers and fictional database:
 
@@ -68,6 +74,14 @@ curl --fail-with-body -X DELETE "http://127.0.0.1:8000/demo/$RUN_ID"
 
 Stop the service with Ctrl-C. The API accepts run IDs and generates fixed fictional records; it does not accept names, uploaded records or clinical payloads. For the Docker version, interactive OpenEMR sign-in, route descriptions and configuration, see [the integration guide](docs/integration.md).
 
+## Read a visit report
+
+The HAPI read above includes `visit_report`. For OpenEMR, sign in using the integration guide, create a fictional patient with `POST /openemr/demo`, then open `GET /openemr/patients/{patient_id}/visits` on the interactive request page. Replace `{patient_id}` with the returned patient ID. The existing patient summary remains available at `GET /openemr/patients/{patient_id}`.
+
+The report has a `visits` list, `unassigned_observations` that need review, and `excluded_observations` for cancelled or erroneous records. An observation is a measurement or other recorded result. The counts add up across those three groups, so a missing link cannot quietly remove a result. An empty visit remains visible too.
+
+I keep the source's measurement status and units, including preliminary results, pounds and Fahrenheit. A blood-pressure result keeps both components instead of becoming one number. A missing value stays missing with its recorded reason. The report does not choose a diagnosis, convert units or replace an earlier result with a newer one. [Report details and supported references](docs/visit-reports.md) explain the boundaries.
+
 ## How I check the results
 
 The service uses FastAPI, a Python web framework, to expose its requests. For OpenEMR, SMART on FHIR is the permission process that lets an app access records after login and consent. A one-use proof called PKCE protects the returned authorization code. Access tokens stay in server memory and refresh before they expire. The [integration guide](docs/integration.md) explains the files, authorization flow, repeatable writes and cleanup boundaries.
@@ -78,6 +92,6 @@ uv run ruff check src tests scripts
 uv run ruff format --check src tests scripts
 ```
 
-There are 53 automated tests: the original 50 plus three cases checking measured, missing and empty observation summaries. The default suite runs without a network connection. [GitHub Actions](https://github.com/jackaI1/fhir-emr-bridge/actions) runs it on Python 3.12 and 3.13, checks a built service container, and starts real OpenEMR and MariaDB containers for the sign-in and record check. CI removes its containers and volumes afterward. The public HAPI check is a separate command because it depends on a shared server.
+There are 89 automated tests, including 36 report cases covering visit links, blood-pressure components, absent values, record status, mixed-patient rejection, duplicate identities, pagination and the service routes. The default suite runs without a network connection. [GitHub Actions](https://github.com/jackaI1/fhir-emr-bridge/actions) runs it on Python 3.12 and 3.13, checks a built service container, and starts real OpenEMR and MariaDB containers for the sign-in, record and visit-report checks. CI removes its containers and volumes afterward. The public HAPI check is a separate command because it depends on a shared server.
 
 I keep measured results and limitations in [the verification notes](docs/verification.md). I use one server worker on localhost because login sessions live in memory; restarting it requires signing in again. This project is not configured to handle real patient records or serve as a public clinical system.

@@ -53,6 +53,9 @@ An API is the interface another program uses to request records. The service exp
 | `POST /auth/logout` | Discard the local session and tokens |
 | `POST /openemr/demo` | Opt-in local native-API seed followed by FHIR reads |
 | `GET /openemr/patients/{uuid}` | Summarize only the fixed synthetic OpenEMR patient |
+| `GET /openemr/patients/{uuid}/visits` | Group fictional results by their explicit visit references, retaining missing and excluded results |
+
+`GET /demo/{uuid}` also includes a `visit_report`. See [visit reports](visit-reports.md) for its fields, reference rules and examples. Both paths use the same report builder; the OpenEMR route reuses the patient check, paginated searches and authorization of the existing summary.
 
 IDs derive from the run UUID. Use a fresh UUID per independent run. Writes use instance PUT when `updateCreate` is advertised, or conditional PUT with `_id` when `conditionalUpdate` is advertised and `updateCreate` is omitted. An omitted field means unknown update-as-create support: this path is verified against HAPI, but another server may reject it. Explicit `updateCreate: false` is refused before writing. Requests use `application/fhir+json`. Verification requires all expected clinical fields, synthetic tags, LOINC codes, UCUM quantities and patient/encounter references; server-added metadata is permitted.
 

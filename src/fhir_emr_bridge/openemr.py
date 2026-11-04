@@ -4,6 +4,7 @@ from urllib.parse import urljoin, urlsplit
 from uuid import UUID
 
 from .fhir import BridgeError, FhirClient, request_json
+from .reports import ReportError, build_visit_report
 
 
 async def search(client: FhirClient, kind: str, patient_id: str) -> list[dict]:
@@ -47,11 +48,12 @@ async def search(client: FhirClient, kind: str, patient_id: str) -> list[dict]:
     raise BridgeError("FHIR pagination limit exceeded; refusing a truncated summary")
 
 
-async def patient_summary(client: FhirClient, patient_id: str) -> dict:
+async def patient_records(client: FhirClient, patient_id: str) -> tuple[list[dict], list[dict]]:
     patient = await client.request("GET", "Patient/" + patient_id)
     names = patient.get("name", [])
     if (
         patient.get("resourceType") != "Patient"
+        or patient.get("id") != patient_id
         or patient.get("birthDate") != "1990-01-01"
         or not any(
             name.get("family") == "SYNTHETIC" and name.get("given") == ["FHIRBridgeDemo"]
@@ -63,6 +65,21 @@ async def patient_summary(client: FhirClient, patient_id: str) -> dict:
         )
     encounters = await search(client, "Encounter", patient_id)
     observations = await search(client, "Observation", patient_id)
+    return encounters, observations
+
+
+async def patient_visits(client: FhirClient, patient_id: str) -> dict:
+    encounters, observations = await patient_records(client, patient_id)
+    try:
+        return build_visit_report(
+            patient_id, encounters, observations, base_url=str(client.http.base_url)
+        )
+    except ReportError as exc:
+        raise BridgeError(str(exc)) from exc
+
+
+async def patient_summary(client: FhirClient, patient_id: str) -> dict:
+    encounters, observations = await patient_records(client, patient_id)
     vitals = []
     for obs in observations:
         quantity = obs.get("valueQuantity", {})

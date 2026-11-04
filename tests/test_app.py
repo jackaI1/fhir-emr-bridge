@@ -20,7 +20,20 @@ def test_http_round_trip_and_validation():
     with TestClient(app, base_url="http://127.0.0.1:8000") as client:
         assert client.get("/health").json() == {"status": "ok", "synthetic_only": True}
         assert client.post(f"/demo/{RUN}").json()["resource_count"] == 5
-        assert client.get(f"/demo/{RUN}").json()["verified"] is True
+        result = client.get(f"/demo/{RUN}").json()
+        assert result["verified"] is True
+        assert result["visit_report"]["counts"] == {
+            "total": 3,
+            "assigned": 3,
+            "unassigned": 0,
+            "excluded": 0,
+        }
+        assert result["visit_report"]["visits"][0]["observations"][0]["valueQuantity"] == {
+            "value": 72.5,
+            "unit": "kg",
+            "system": "http://unitsofmeasure.org",
+            "code": "kg",
+        }
         assert client.delete(f"/demo/{RUN}").json()["deleted"] == 5
         assert client.post("/demo/not-a-uuid").status_code == 422
         assert (

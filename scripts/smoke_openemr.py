@@ -182,6 +182,25 @@ def main():
             "data_absent_observation_count",
         ):
             assert read.json()[key] == result[key]
+        visits = client.get("/openemr/patients/" + result["patient_id"] + "/visits")
+        assert visits.status_code == 200, visits.text
+        visit_report = visits.json()
+        counts = visit_report["counts"]
+        assert counts["total"] == 15, counts
+        assert counts["assigned"] + counts["unassigned"] + counts["excluded"] == 15, counts
+        assert len(visit_report["visits"]) == result["encounter_count"], visit_report
+        # Some record systems omit visit links. Keep those results unassigned rather than guess.
+        report_observations = [
+            obs for visit in visit_report["visits"] for obs in visit["observations"]
+        ] + [
+            item["observation"]
+            for key in ("unassigned_observations", "excluded_observations")
+            for item in visit_report[key]
+        ]
+        quantities = [o["valueQuantity"] for o in report_observations if "valueQuantity" in o]
+        assert len(quantities) == 3, quantities
+        assert {q["code"] for q in quantities} == {"/min", "[degF]", "[lb_av]"}, quantities
+        assert sum(bool(o.get("dataAbsentReason")) for o in report_observations) == 10
         # This is expected to fail BEFORE writing: OpenEMR does not advertise these FHIR writes.
         from uuid import uuid4
 
@@ -194,6 +213,7 @@ def main():
                     "smart_authorized": True,
                     "pkce": "S256",
                     "fhir_version": metadata.json()["fhirVersion"],
+                    "visit_report_counts": counts,
                     **result,
                 },
                 indent=2,
