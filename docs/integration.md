@@ -25,7 +25,7 @@ export BRIDGE_SMART_CLIENT_SECRET="$(cat .local/openemr-client-secret)"
 export BRIDGE_SMART_SCOPES='openid offline_access api:fhir user/Patient.read user/Encounter.read user/Observation.read api:oemr user/patient.read user/patient.write user/encounter.read user/encounter.write user/vital.read user/vital.write'
 export BRIDGE_ALLOW_INSECURE_LOCAL_TLS=true
 export BRIDGE_OPENEMR_SEED_ENABLED=true
-uv run uvicorn fhir_emr_bridge.app:app --host 127.0.0.1 --port 8000 --no-access-log
+uv run uvicorn fhir_emr_bridge.app:app --host 127.0.0.1 --port 8000 --no-access-log --no-proxy-headers
 ```
 
 Visit `http://127.0.0.1:8000/auth/login` using that exact hostname, log in as `admin` with the generated `DEMO_ADMIN_PASSWORD` from your local `.env`, approve access, then open `/docs` and call `POST /openemr/demo`. Reuse its returned patient UUID with `GET /openemr/patients/{uuid}`. Sessions require one worker and expire after eight hours; restarting the service requires login again.
@@ -50,6 +50,7 @@ An API is the interface another program uses to request records. The service exp
 | `GET /demo/{uuid}` | Read and verify the same run |
 | `DELETE /demo/{uuid}` | Check ownership of every resource, then delete observations before encounter and patient |
 | `GET /auth/login`, `GET /auth/callback` | SMART standalone browser authorization |
+| `GET /stored/{kind}/{uuid}`, `DELETE /stored/{kind}/{uuid}` | Read or remove the creating session's encrypted saved report; kind is demo, openemr-summary or openemr-visits |
 | `POST /auth/logout` | Discard the local session and tokens |
 | `POST /openemr/demo` | Opt-in local native-API seed followed by FHIR reads |
 | `GET /openemr/patients/{uuid}` | Summarize only the fixed synthetic OpenEMR patient |
@@ -77,9 +78,9 @@ The summary preserves the upstream values and units. LOINC codes identify which 
 
 Settings use the `BRIDGE_` environment prefix (or ignored `.env`); see [`config.py`](../src/fhir_emr_bridge/config.py). Default upstream: `https://hapi.fhir.org/baseR4`. `BRIDGE_SMART_CLIENT_SECRET` optionally supplies confidential-client authentication and is masked in settings representations. A configured `BRIDGE_SMART_CLIENT_ID` requires a valid browser session before data operations. Additional settings include `BRIDGE_REDIRECT_URI` and JSON-array `BRIDGE_ALLOWED_HOSTS`. HTTP is allowed only on loopback; disabling TLS verification is allowed only for a loopback upstream and is used for OpenEMR's generated demo certificate.
 
-SMART discovery is restricted to the configured upstream origin. State is random, single-use, browser-bound and valid for ten minutes. Tokens remain in bounded server memory, refresh before expiration, and never appear in API responses. Cookies are HttpOnly and SameSite=Lax (Secure for HTTPS callbacks). This is delegated authorization; the service does not consume ID-token identity claims. Logout removes local credentials; it does not revoke the upstream grant. Request origins and hostnames are checked, redirects are not followed by the FHIR client, pagination is bounded to the configured FHIR base, and upstream errors are sanitized. Keep access logging disabled so callback codes are not logged.
+SMART discovery is restricted to the configured upstream origin. State is random, single-use, browser-bound and valid for ten minutes. Tokens are encrypted in the server-side vault, refresh before expiration, and never appear in API responses. Session metadata remains bounded in memory; saved reports belong to the creating session. See [privacy operations](privacy-operations.md) for optional persistent storage, key rotation, retention and audit checkpoints. Cookies are HttpOnly and SameSite=Lax, with Secure set for HTTPS login, HTTPS callbacks or explicit HTTPS enforcement. This is delegated authorization; the service does not consume ID-token identity claims. Logout removes local credentials; it does not revoke the upstream grant. Request origins and hostnames are checked, redirects are not followed by the FHIR client, pagination is bounded to the configured FHIR base, and upstream errors are sanitized. Keep access logging disabled so callback codes are not logged.
 
-This is a development integration demonstrator, not a clinical system. Use one worker on localhost. Internet hosting would require operator authentication/rate limiting, persistent encrypted sessions, HTTPS termination and deployment-specific controls. Do not point it at a real patient database. It does not claim full SMART certification, EHR-launch support, US Core validation or clinical decision support.
+This is a development integration demonstrator, not a clinical system. Use one worker on localhost. Remote data requests now require HTTPS. Internet hosting still requires operator identity/role policies, rate limiting, independently managed keys/audit and deployment-specific controls; session metadata is not resumed after restart. Do not point it at a real patient database. It does not claim full SMART certification, EHR-launch support, US Core validation or clinical decision support.
 
 ## Implementation files
 
@@ -90,7 +91,7 @@ A command-line tool alone would offer fewer ways to call the same workflow.
 | File | Role in the visit workflow |
 | --- | --- |
 | [`app.py`](../src/fhir_emr_bridge/app.py) | Defines the HTTP routes, starts the shared upstream client and connects requests to a server-side login session. |
-| [`smart.py`](../src/fhir_emr_bridge/smart.py) | Requests permission, exchanges authorization codes, refreshes expiring tokens and keeps credentials in bounded server memory. |
+| [`smart.py`](../src/fhir_emr_bridge/smart.py) | Requests permission, exchanges authorization codes, refreshes expiring tokens and keeps credentials encrypted while bounding session metadata in memory. |
 | [`openemr.py`](../src/fhir_emr_bridge/openemr.py) | Creates the fictional visit through OpenEMR's standard API and summarizes patient-scoped FHIR searches, including missing-data counts. |
 | [`fhir.py`](../src/fhir_emr_bridge/fhir.py) | Checks server capabilities, repeats the five HAPI writes, verifies returned values and deletes only records owned by a demo run. |
 | [`synthetic.py`](../src/fhir_emr_bridge/synthetic.py) | Defines the fixed fictional patient, visit and three measurements. |

@@ -269,3 +269,68 @@ def test_invalid_configuration_does_not_print_raw_client_secret():
     with pytest.raises(ValidationError) as caught:
         Settings(smart_client_secret=secret, fhir_base_url="http://remote.test/fhir")
     assert secret not in str(caught.value)
+
+
+@pytest.mark.parametrize("flow", ["callback", "refresh"])
+@pytest.mark.parametrize("invalidate", ["logout", "expire"])
+async def test_inflight_token_exchange_cannot_revive_invalidated_session(flow, invalidate):
+    import asyncio
+
+    clock = [100.0]
+    started, release = asyncio.Event(), asyncio.Event()
+    exchanges = [0]
+
+    async def upstream(request):
+        if request.url.path.endswith("smart-configuration"):
+            return httpx.Response(
+                200,
+                json={
+                    "authorization_endpoint": "https://ehr.test/auth",
+                    "token_endpoint": "https://ehr.test/token",
+                },
+            )
+        exchanges[0] += 1
+        if flow == "callback" or exchanges[0] == 2:
+            started.set()
+            await release.wait()
+        return httpx.Response(
+            200,
+            json={
+                "access_token": "fictional-access",
+                "refresh_token": "fictional-refresh",
+                "token_type": "Bearer",
+                "expires_in": 60,
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as http:
+        auth = SmartAuth(
+            Settings(fhir_base_url="https://ehr.test/fhir", smart_client_id="demo"),
+            http,
+            clock=lambda: clock[0],
+        )
+        sid, url = await auth.begin()
+        state = parse_qs(urlsplit(url).query)["state"][0]
+        if flow == "refresh":
+            await auth.complete(sid, state, "code")
+            clock[0] += 61
+            task = asyncio.create_task(auth.token(sid))
+        else:
+            task = asyncio.create_task(auth.complete(sid, state, "code"))
+        await asyncio.wait_for(started.wait(), timeout=2)
+        if invalidate == "logout":
+            auth.logout(sid)
+        else:
+            clock[0] += 9 * 3600
+            auth.prune()
+        release.set()
+        with pytest.raises(BridgeError):
+            await task
+        assert sid not in auth.sessions
+        assert (
+            auth.vault.db.execute(
+                "SELECT COUNT(*) FROM records WHERE namespace='tokens'"
+            ).fetchone()[0]
+            == 0
+        )
+        auth.vault.close()

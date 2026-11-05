@@ -7,4 +7,4 @@ RUN uv sync --frozen --no-dev && useradd --uid 10001 --create-home bridge
 USER bridge
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000
-CMD ["uvicorn", "fhir_emr_bridge.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+CMD ["uvicorn", "fhir_emr_bridge.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--no-proxy-headers"]
