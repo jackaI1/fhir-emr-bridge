@@ -1,6 +1,6 @@
 """Standalone SMART authorization code flow for a registered public or confidential client.
 
-Access/refresh tokens stay in bounded, expiring server memory. An opaque cookie
+Access/refresh tokens stay in an encrypted, expiring server-side vault. An opaque cookie
 binds PKCE and OAuth state to the initiating browser; no identity claims are used.
 """
 
@@ -16,6 +16,8 @@ import httpx
 
 from .config import Settings, safe_url
 from .fhir import BridgeError, request_json
+from .keyfile import load_keys
+from .vault import Vault
 
 
 def origin(url: str) -> tuple:
@@ -25,12 +27,11 @@ def origin(url: str) -> tuple:
 
 @dataclass
 class Session:
-    state: str
-    verifier: str
+    state: str = field(repr=False)
+    verifier: str = field(repr=False)
     token_endpoint: str
     deadline: float
-    access_token: str = ""
-    refresh_token: str = ""
+    token_record: str = field(default_factory=lambda: secrets.token_urlsafe(32), repr=False)
     token_expiry: float = 0
     pending: bool = True
     refresh_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -39,9 +40,12 @@ class Session:
 class SmartAuth:
     max_sessions = 128
 
-    def __init__(self, settings: Settings, http: httpx.AsyncClient, clock=time.monotonic):
+    def __init__(
+        self, settings: Settings, http: httpx.AsyncClient, clock=time.monotonic, *, vault=None
+    ):
         self.settings, self.http, self.clock = settings, http, clock
         self.sessions: dict[str, Session] = {}
+        self.vault = vault or Vault(":memory:", *load_keys())
 
     def client_credentials(self) -> dict:
         credentials = {"client_id": self.settings.smart_client_id}
@@ -52,7 +56,9 @@ class SmartAuth:
 
     def prune(self):
         now = self.clock()
-        self.sessions = {sid: s for sid, s in self.sessions.items() if s.deadline > now}
+        for sid, session in list(self.sessions.items()):
+            if session.deadline <= now:
+                self.logout(sid)
 
     async def begin(self) -> tuple[str, str]:
         if not self.settings.smart_client_id:
@@ -105,7 +111,12 @@ class SmartAuth:
         access_token = data.get("access_token")
         expiry = data.get("expires_in", 300)
         token_type = data.get("token_type")
-        refresh = data.get("refresh_token", session.refresh_token)
+        existing = (
+            self.vault.get("tokens", session.token_record, actor=session.token_record)
+            if session.token_expiry
+            else {}
+        ) or {}
+        refresh = data.get("refresh_token", existing.get("refresh_token", ""))
         if (
             not isinstance(access_token, str)
             or not access_token
@@ -117,7 +128,13 @@ class SmartAuth:
             or not isinstance(refresh, str)
         ):
             raise BridgeError("Invalid SMART token response")
-        session.access_token, session.refresh_token = access_token, refresh
+        self.vault.put(
+            "tokens",
+            session.token_record,
+            {"access_token": access_token, "refresh_token": refresh},
+            actor=session.token_record,
+            ttl=8 * 3600,
+        )
         session.token_expiry = self.clock() + expiry
         session.deadline = self.clock() + 8 * 3600
 
@@ -142,6 +159,8 @@ class SmartAuth:
                     "code_verifier": session.verifier,
                 },
             )
+            if self.session(sid) is not session:
+                raise BridgeError("SMART session changed; sign in again", status=401)
             self.save_tokens(session, data)
         except BridgeError:
             self.logout(sid)
@@ -152,13 +171,17 @@ class SmartAuth:
 
     async def token(self, sid: str | None) -> str:
         session = self.session(sid)
-        if session.pending or not session.access_token:
+        if session.pending or not session.token_expiry:
             raise BridgeError("Complete SMART login first", status=401)
         async with session.refresh_lock:
             # Another request may already have rotated this refresh token.
             self.session(sid)
+            tokens = self.vault.get("tokens", session.token_record, actor=session.token_record)
+            if not tokens:
+                self.logout(sid)
+                raise BridgeError("SMART login required or session expired", status=401)
             if session.token_expiry <= self.clock() + 10:
-                if not session.refresh_token:
+                if not tokens["refresh_token"]:
                     self.logout(sid)
                     raise BridgeError("SMART token expired; sign in again", status=401)
                 try:
@@ -169,14 +192,19 @@ class SmartAuth:
                         data={
                             "grant_type": "refresh_token",
                             **self.client_credentials(),
-                            "refresh_token": session.refresh_token,
+                            "refresh_token": tokens["refresh_token"],
                         },
                     )
+                    if self.session(sid) is not session:
+                        raise BridgeError("SMART session changed; sign in again", status=401)
                     self.save_tokens(session, data)
                 except BridgeError:
                     self.logout(sid)
                     raise
-        return session.access_token
+                tokens = self.vault.get("tokens", session.token_record, actor=session.token_record)
+        return tokens["access_token"]
 
     def logout(self, sid: str | None):
-        self.sessions.pop(sid, None)
+        session = self.sessions.pop(sid, None)
+        if session and session.token_expiry:
+            self.vault.delete("tokens", session.token_record, actor=session.token_record)

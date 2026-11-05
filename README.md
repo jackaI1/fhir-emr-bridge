@@ -2,11 +2,11 @@
 
 I built a small tool for checking medical-record transfers because I needed to test my integration code without using anyone's medical information.
 
-## Overview
-
 Medical-record software stores a patient's details, visits and measurements. A successful save request does not prove that another program can read the right values or connect them to the right visit. I wanted a repeatable way to check the whole trip.
 
 I use this personal project to create an obviously fictional patient, add one visit with weight, pulse and temperature, then read the records back and check their values, units and links. The quickest demo uses a shared public test server and removes its five records afterward. I can also run OpenEMR, a free electronic health record system, on my own computer and test its sign-in and record access.
+
+I save the latest fictional reports in an encrypted store so I can compare them later without leaving readable patient values on disk. Login credentials use the same protection, and an access history helps me check who opened a record. Run `uv run python scripts/smoke_privacy.py` after setup for an offline walkthrough that removes its temporary files.
 
 I also use the visit report to check which measurements belong together. It follows each record's saved visit link, keeps missing measurements visible and sets aside cancelled or erroneous results. Two visits on the same date stay separate.
 
@@ -60,7 +60,7 @@ The database persists until that command. Delete the generated `.env` and `.loca
 To send individual requests against HAPI, start the Python web service:
 
 ```sh
-uv run uvicorn fhir_emr_bridge.app:app --host 127.0.0.1 --port 8000 --no-access-log
+uv run uvicorn fhir_emr_bridge.app:app --host 127.0.0.1 --port 8000 --no-access-log --no-proxy-headers
 ```
 
 Open [the interactive request page](http://127.0.0.1:8000/docs), or run these commands in another terminal. The unique run ID lets me repeat or remove exactly the same five records:
@@ -82,9 +82,23 @@ The report has a `visits` list, `unassigned_observations` that need review, and 
 
 I keep the source's measurement status and units, including preliminary results, pounds and Fahrenheit. A blood-pressure result keeps both components instead of becoming one number. A missing value stays missing with its recorded reason. The report does not choose a diagnosis, convert units or replace an earlier result with a newer one. [Report details and supported references](docs/visit-reports.md) explain the boundaries.
 
+## Keep a protected copy of a report
+
+My service saves the HAPI readback and OpenEMR summary/visit reports automatically. The default store lasts only until the service stops. To keep encrypted reports across restarts, generate a private key file outside the repository and set the database path using the [storage setup](docs/privacy-operations.md#keep-reports-across-restarts).
+
+After creating a HAPI run through the service, `GET /stored/demo/{run_id}` reads its saved copy. For OpenEMR, use `GET /stored/openemr-summary/{patient_id}` or `GET /stored/openemr-visits/{patient_id}` after reading those reports, in the same signed-in browser. `DELETE` on the same saved-report URL removes only that local copy. Reports expire after 24 hours by default; startup or the purge command removes expired ciphertext. The access history remains.
+
+I use AES-256-GCM, encryption that also detects changed values. Each stored field has its own random data key, wrapped by a versioned master key. Rotating a master key replaces those wrappers without rewriting the report values. A separate secret signs the access history as a chain so edits can be detected. A signed checkpoint saved somewhere independent is needed to detect missing history at the end. Incoming remote requests require HTTPS, and the local HTTP exception is only for the demo.
+
+```sh
+uv run python scripts/smoke_privacy.py
+```
+
+The offline walkthrough uses a fictional FHIR sandbox inside the process. It checks seven encrypted fields, a saved readback, key rotation and detected audit tampering, then removes its keys and database. It opens no ports or browser pages. The [operating guide](docs/privacy-operations.md) explains disk storage, TLS, rotation, checkpoints and cleanup. My [PHIPA-style privacy impact assessment](docs/privacy-impact-assessment.md) maps the data flows, purposes, safeguards, retention and breach response to the code. PHIPA is Ontario's health-information privacy law; the assessment is an engineering exercise, not a claim that this demo is approved for clinical use or certified under PHIPA or the US HIPAA law.
+
 ## How I check the results
 
-The service uses FastAPI, a Python web framework, to expose its requests. For OpenEMR, SMART on FHIR is the permission process that lets an app access records after login and consent. A one-use proof called PKCE protects the returned authorization code. Access tokens stay in server memory and refresh before they expire. The [integration guide](docs/integration.md) explains the files, authorization flow, repeatable writes and cleanup boundaries.
+The service uses FastAPI, a Python web framework, to expose its requests. For OpenEMR, SMART on FHIR is the permission process that lets an app access records after login and consent. A one-use proof called PKCE protects the returned authorization code. Access and refresh tokens stay encrypted in the server-side store and refresh before they expire. Only expiring session metadata stays in memory. The [integration guide](docs/integration.md) explains the files, authorization flow, repeatable writes and cleanup boundaries.
 
 ```sh
 uv run pytest -q
@@ -92,6 +106,6 @@ uv run ruff check src tests scripts
 uv run ruff format --check src tests scripts
 ```
 
-There are 89 automated tests, including 36 report cases covering visit links, blood-pressure components, absent values, record status, mixed-patient rejection, duplicate identities, pagination and the service routes. The default suite runs without a network connection. [GitHub Actions](https://github.com/jackaI1/fhir-emr-bridge/actions) runs it on Python 3.12 and 3.13, checks a built service container, and starts real OpenEMR and MariaDB containers for the sign-in, record and visit-report checks. CI removes its containers and volumes afterward. The public HAPI check is a separate command because it depends on a shared server.
+There are 129 automated tests, including 40 added privacy cases and 36 report cases covering visit links, blood-pressure components, absent values, record status, mixed-patient rejection, duplicate identities, pagination and the service routes. The privacy cases cover wrong keys, modified ciphertext, rotation rollback, audit integrity, session isolation, retention, TLS policy and logout during an in-flight token exchange. The default suite runs without a network connection. [GitHub Actions](https://github.com/jackaI1/fhir-emr-bridge/actions) runs it on Python 3.12 and 3.13, checks a built service container, and starts real OpenEMR and MariaDB containers for the sign-in, record and visit-report checks. CI removes its containers and volumes afterward. The public HAPI check is a separate command because it depends on a shared server.
 
 I keep measured results and limitations in [the verification notes](docs/verification.md). I use one server worker on localhost because login sessions live in memory; restarting it requires signing in again. This project is not configured to handle real patient records or serve as a public clinical system.

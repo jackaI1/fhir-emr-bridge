@@ -185,6 +185,13 @@ def main():
         visits = client.get("/openemr/patients/" + result["patient_id"] + "/visits")
         assert visits.status_code == 200, visits.text
         visit_report = visits.json()
+        saved = client.get("/stored/openemr-visits/" + result["patient_id"])
+        assert saved.status_code == 200, saved.text
+        assert saved.json() == visit_report
+        saved_summary = client.get("/stored/openemr-summary/" + result["patient_id"])
+        assert saved_summary.status_code == 200, saved_summary.text
+        assert saved_summary.json() == read.json()
+        assert app.state.vault.verify()["count"] > 0
         counts = visit_report["counts"]
         assert counts["total"] == 15, counts
         assert counts["assigned"] + counts["unassigned"] + counts["excluded"] == 15, counts
@@ -211,6 +218,7 @@ def main():
             json.dumps(
                 {
                     "smart_authorized": True,
+                    "encrypted_saved_reports_verified": True,
                     "pkce": "S256",
                     "fhir_version": metadata.json()["fhirVersion"],
                     "visit_report_counts": counts,

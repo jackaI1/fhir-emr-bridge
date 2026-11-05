@@ -1,8 +1,9 @@
 """Operator-owned configuration; request input never chooses an upstream."""
 
+from pathlib import Path
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LOOPBACK = {"localhost", "127.0.0.1", "::1"}
@@ -28,6 +29,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="BRIDGE_", env_file=".env", extra="ignore", hide_input_in_errors=True
     )
+    privacy_db_path: str = ":memory:"
+    privacy_key_file: Path | None = None
+    report_retention_seconds: int = Field(default=86400, ge=1, le=86400 * 30)
+    require_https: bool = False
     fhir_base_url: str = "https://hapi.fhir.org/baseR4"
     smart_client_id: str = ""
     smart_client_secret: SecretStr = SecretStr("")
@@ -41,6 +46,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_urls(self):
+        if self.privacy_db_path != ":memory:" and not self.privacy_key_file:
+            raise ValueError("Persistent privacy storage requires an explicit private key file")
         self.fhir_base_url = safe_url(self.fhir_base_url)
         self.redirect_uri = safe_url(self.redirect_uri)
         local = urlsplit(self.fhir_base_url).hostname in LOOPBACK

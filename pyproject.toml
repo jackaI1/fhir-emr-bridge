@@ -3,7 +3,13 @@ name = "fhir-emr-bridge"
 version = "0.1.0"
 description = "Synthetic FHIR R4 integration and OpenEMR SMART demonstration"
 requires-python = ">=3.12"
-dependencies = ["fastapi>=0.115,<1", "httpx>=0.28,<1", "uvicorn>=0.34,<1", "pydantic-settings>=2.8,<3"]
+dependencies = [
+    "fastapi>=0.115,<1",
+    "httpx>=0.28,<1",
+    "uvicorn>=0.34,<1",
+    "pydantic-settings>=2.8,<3",
+    "cryptography>=44,<49",
+]
 
 [dependency-groups]
 dev = [
